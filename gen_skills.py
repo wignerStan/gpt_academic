@@ -4,19 +4,43 @@ import shutil
 import re
 
 def sanitize_name(name):
-    # Replace non-alphanumeric characters with underscores, but keep Chinese characters if desired?
-    # For file systems, safer to stick to ascii or simple chars.
-    # But user might want Chinese names. Let's strip special chars.
-    # name = re.sub(r'[^\w\s-]', '', name)
-    name = name.strip().replace(" ", "-").replace("/", "-").replace("\\", "-")
+    # Standardize to lowercase, replace special chars with hyphens
+    # name = name.lower() # User's code base has capitalized names in SKILL.md.
+    # However, skill-writer spec says "Lowercase letters, numbers, hyphens only".
+    # So we should enforce lowercase.
+
+    # Remove any non-alphanumeric chars that are not spaces or hyphens
+    name = re.sub(r'[^\w\s-]', '', name)
+    # Replace spaces and underscores with hyphens
+    name = name.strip().replace(" ", "-").replace("_", "-")
+    # Convert to lowercase
+    name = name.lower()
+    # Remove multiple hyphens
+    name = re.sub(r'-+', '-', name)
     return name
 
 def generate_skills():
     # Setup directories
     base_dir = "skills"
+
+    # Check if base_dir exists. If so, we want to clear it BUT preserve 'skill-writer' if it exists.
+    # Actually, simplest is to check if skill-writer exists, read it, clear dir, restore it.
+    skill_writer_path = os.path.join(base_dir, "skill-writer", "SKILL.md")
+    skill_writer_content = None
+    if os.path.exists(skill_writer_path):
+        with open(skill_writer_path, 'r', encoding='utf-8') as f:
+            skill_writer_content = f.read()
+
     if os.path.exists(base_dir):
         shutil.rmtree(base_dir)
     os.makedirs(base_dir)
+
+    # Restore skill-writer
+    if skill_writer_content:
+        sw_dir = os.path.join(base_dir, "skill-writer")
+        os.makedirs(sw_dir)
+        with open(os.path.join(sw_dir, "SKILL.md"), "w", encoding='utf-8') as f:
+            f.write(skill_writer_content)
 
     # 1. Process Core Functions (Prompts)
     import core_functional
@@ -25,15 +49,21 @@ def generate_skills():
 
     for name, meta in core_funcs.items():
         safe_name = sanitize_name(name)
-        skill_dir = os.path.join(base_dir, f"prompt_{safe_name}")
+        # Prefix with 'prompt-' to distinguish and ensure uniqueness if names collide
+        # But 'prompt-' adds clutter. User guide says "good: pdf-processor".
+        # Let's use semantic names. 'prompt-<name>' is okay for now to avoid collision.
+        safe_name = f"prompt-{safe_name}"
+
+        skill_dir = os.path.join(base_dir, safe_name)
         os.makedirs(skill_dir, exist_ok=True)
 
         # Extract content
         prefix = meta.get("Prefix", "")
         suffix = meta.get("Suffix", "")
 
-        # Try to extract a description from the prefix if possible, or just use name
-        description = f"Execute the '{name}' prompt."
+        # Generate Description adhering to "What + When + Triggers"
+        # Since we don't have "When" metadata, we construct a generic one.
+        description = f"Execute the '{name}' prompt template. Use when the user wants to perform '{name}' or apply this specific prompt pattern."
 
         content = f"""---
 name: {safe_name}
@@ -43,21 +73,28 @@ type: prompt
 
 # {name}
 
-## Instructions
-The following text is the prefix that will be added to the user input:
+## Quick start
+Use this skill to wrap your input with the defined prompt template.
 
+## Instructions
+The system will apply the following prefix and suffix to the user input.
+
+**Prefix**:
 ```text
 {prefix}
 ```
 
-The following text is the suffix that will be added to the user input:
-
+**Suffix**:
 ```text
 {suffix}
 ```
 
-## Usage
-Provide the input text that needs to be processed.
+## Examples
+User: "Apply {name} to this text: ..."
+Agent: [Executes skill]
+
+## Requirements
+- None
 """
         with open(os.path.join(skill_dir, "SKILL.md"), "w", encoding="utf-8") as f:
             f.write(content)
@@ -72,32 +109,45 @@ Provide the input text that needs to be processed.
 
     for name, meta in crazy_funcs.items():
         safe_name = sanitize_name(name)
-        skill_dir = os.path.join(base_dir, f"tool_{safe_name}")
+        # Avoid collision
+        if not safe_name.startswith("tool-"):
+            safe_name = f"tool-{safe_name}"
+
+        skill_dir = os.path.join(base_dir, safe_name)
         os.makedirs(skill_dir, exist_ok=True)
 
         info = meta.get("Info", "No description available.")
         group = meta.get("Group", "General")
 
+        # Improve description
+        description = f"{info} Use when performing {group}-related tasks involving {name}."
+        if len(description) > 1024:
+            description = description[:1021] + "..."
+
         content = f"""---
 name: {safe_name}
-description: {info}
+description: {description}
 type: tool
 group: {group}
 ---
 
 # {name}
 
-## Description
+## Quick start
+This is a tool-based skill provided by the `crazy_functions` plugin system.
+
+## Instructions
+This skill allows the agent to perform complex tasks defined in the `{name}` plugin.
+It belongs to the **{group}** category.
+
+**Function Info**:
 {info}
 
-## Type
-Tool / Plugin
-
-## Group
-{group}
+## Examples
+User: "Run {name} on this file..."
 
 ## Implementation
-This skill is backed by a Python function in the `crazy_functions` module.
+Python Module: `crazy_functions`
 """
         with open(os.path.join(skill_dir, "SKILL.md"), "w", encoding="utf-8") as f:
             f.write(content)
