@@ -1,6 +1,7 @@
 import ast
 import json
 import os
+import re
 
 def extract_plugins_from_file(filepath):
     """
@@ -42,6 +43,13 @@ def extract_plugins_from_file(filepath):
                                         v = val.values[j]
                                         if isinstance(v, ast.Constant):
                                             plugin_info[k.value] = v.value
+                                        elif isinstance(v, ast.Call):
+                                            # Handle HotReload(Func) or similar
+                                            # Extract function name if possible
+                                            if hasattr(v.func, 'id'): # Direct call
+                                                plugin_info[k.value] = f"Calls: {v.func.id}"
+                                            elif isinstance(v.func, ast.Name):
+                                                plugin_info[k.value] = f"Calls: {v.func.id}"
                                 plugins[key.value] = plugin_info
 
                 # Handle updates: function_plugins.update({ ... })
@@ -58,58 +66,145 @@ def extract_plugins_from_file(filepath):
                                             v = val.values[j]
                                             if isinstance(v, ast.Constant):
                                                 plugin_info[k.value] = v.value
-                                plugins[key.value] = plugin_info
+                                    plugins[key.value] = plugin_info
 
     return plugins
+
+def clean_text(text):
+    if not text:
+        return ""
+    # Remove surrounding quotes if they were extracted literally (though AST usually handles this)
+    # But clean up newlines and extra spaces
+    text = text.strip()
+    # Replace multiple newlines with a single newline
+    text = re.sub(r'\n+', '\n', text)
+    return text
+
+def categorize_core_function(name):
+    """Maps core functions to categories."""
+    mapping = {
+        "学术语料润色": "Academic",
+        "查找语法错误": "Text Processing",
+        "参考文献转Bib": "Academic",
+        "中译英": "Translation",
+        "学术英中互译": "Academic",
+        "英译中": "Translation",
+        "解释代码": "Coding",
+        "总结绘制脑图": "Utility",
+        "找图片": "Utility",
+    }
+    return mapping.get(name, "General")
+
+def map_crazy_group(group_str):
+    """Maps the Chinese group names to English categories."""
+    if not group_str:
+        return "General"
+
+    # Handle multi-groups like "对话|编程"
+    groups = group_str.split('|')
+    primary_group = groups[0]
+
+    mapping = {
+        "对话": "Chat & General",
+        "编程": "Coding",
+        "学术": "Academic",
+        "智能体": "Agent Tools",
+        "画图": "Image Generation",
+        "图像": "Image Generation"
+    }
+
+    return mapping.get(primary_group, primary_group)
 
 def generate_skill_md(output_file='SKILL.md'):
     crazy_plugins = extract_plugins_from_file('crazy_functional.py')
     core_plugins = extract_plugins_from_file('core_functional.py')
 
-    content = []
-    content.append("# GPT Academic Skills")
-    content.append("")
-    content.append("This document lists the core capabilities available to the agent.")
-    content.append("")
+    all_skills = {} # Category -> list of skills
 
-    content.append("## Core Functions")
-    content.append("These are text processing functions usually applied to the current input.")
-    content.append("")
+    # Process Core Plugins
     for name, info in core_plugins.items():
-        desc = info.get('Prefix', '').strip()
-        if not desc:
-            # Try to get description from comments or other fields if available (limited by AST extraction)
-            # For now, if prefix is code-like or empty, maybe skip or just list name
-            pass
+        category = categorize_core_function(name)
+        if category not in all_skills:
+            all_skills[category] = []
 
-        # Clean up description (remove quotes, etc if extracted raw)
-        desc = desc.replace('"', '').replace("'", "").strip()
-        content.append(f"### {name}")
-        if desc:
-            content.append(f"- **Description**: {desc}")
+        description = info.get('Prefix', '')
+        if not description:
+             # Try to construct a description if prefix is missing or code
+             description = f"Performs {name} on the input text."
+        else:
+             # Sometimes Prefix is a prompt. We can say "Uses the following prompt prefix: ..."
+             # or just present it as description.
+             description = f"Applies the following prompt/logic: {clean_text(description)}"
+
+        all_skills[category].append({
+            "name": name,
+            "description": description,
+            "type": "Core Function (Immediate Text Action)",
+            "usage": "Select this function to process the current text in the input area."
+        })
+
+    # Process Crazy Plugins
+    for name, info in crazy_plugins.items():
+        raw_group = info.get('Group', 'General')
+        category = map_crazy_group(raw_group)
+
+        if category not in all_skills:
+            all_skills[category] = []
+
+        description = info.get('Info', 'No specific description provided.')
+        usage = "Call this plugin via the plugin menu or Void Terminal."
+
+        args_info = []
+        if 'AdvancedArgs' in info and info['AdvancedArgs']:
+            reminder = info.get('ArgsReminder', '')
+            if reminder:
+                args_info.append(f"**Advanced Arguments**: {clean_text(reminder)}")
+
+        # Extract implied arguments from description
+        # Many plugins say "输入参数为..." (Input parameter is...)
+        input_param_hint = "Check description for input requirements (usually file path or text)."
+        if "输入参数" in description:
+            # simple extraction attempt
+            match = re.search(r"输入参数.*", description)
+            if match:
+                input_param_hint = match.group(0)
+
+        usage += f" {input_param_hint}"
+
+        skill_entry = {
+            "name": name,
+            "description": clean_text(description),
+            "type": "Plugin (Complex Task)",
+            "usage": usage,
+            "details": args_info
+        }
+        all_skills[category].append(skill_entry)
+
+    # Sort categories
+    sorted_categories = sorted(all_skills.keys())
+
+    content = []
+    content.append("# GPT Academic Agent Skills Index")
+    content.append("")
+    content.append("This document provides a comprehensive index of the tools and skills available to the Code CLI Agent within the GPT Academic environment. Use this reference to understand what actions can be performed.")
+    content.append("")
+
+    for category in sorted_categories:
+        content.append(f"## {category}")
         content.append("")
 
-    content.append("## Crazy Functions (Plugins)")
-    content.append("These are complex functions that can handle files, perform searches, etc.")
-    content.append("")
+        skills = all_skills[category]
+        # Sort skills by name
+        skills.sort(key=lambda x: x['name'])
 
-    # Sort by Group
-    grouped_plugins = {}
-    for name, info in crazy_plugins.items():
-        group = info.get('Group', 'Other')
-        if group not in grouped_plugins:
-            grouped_plugins[group] = []
-        grouped_plugins[group].append((name, info))
-
-    for group, plugins in grouped_plugins.items():
-        content.append(f"### Group: {group}")
-        for name, info in plugins:
-            description = info.get('Info', 'No description available.')
-            content.append(f"#### {name}")
-            content.append(f"- **Description**: {description}")
-            if 'AdvancedArgs' in info and info['AdvancedArgs']:
-                reminder = info.get('ArgsReminder', '')
-                content.append(f"- **Advanced Arguments**: {reminder}")
+        for skill in skills:
+            content.append(f"### {skill['name']}")
+            content.append(f"- **Type**: {skill['type']}")
+            content.append(f"- **Description**: {skill['description']}")
+            content.append(f"- **Usage Instruction**: {skill['usage']}")
+            if 'details' in skill and skill['details']:
+                for detail in skill['details']:
+                    content.append(f"- {detail}")
             content.append("")
 
     with open(output_file, 'w', encoding='utf-8') as f:
