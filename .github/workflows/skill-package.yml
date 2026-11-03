@@ -1,0 +1,77 @@
+name: GPT Academic Skill package
+
+on:
+  pull_request:
+    paths:
+      - 'core_functional.py'
+      - 'crazy_functional.py'
+      - 'packages/gpt-academic/**'
+      - '.github/workflows/skill-package.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify closed inventory and catalog
+        run: |
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root=Path('packages/gpt-academic')
+          value=json.loads((root/'source-inventory.json').read_text())
+          declared={item['path'] for item in value['entries']}
+          actual={p.relative_to(root).as_posix() for p in (root/'source').rglob('*') if p.is_file()}
+          assert declared == actual
+          for item in value['entries']:
+              raw=(root/item['path']).read_bytes()
+              assert hashlib.sha256(raw).hexdigest() == item['sha256']
+              assert len(raw) == item['size']
+              assert f"{(root/item['path']).stat().st_mode & 0o7777:04o}" == item['mode']
+          PY
+          python -B -m unittest discover -s packages/gpt-academic/tests -v
+          python packages/gpt-academic/source/skills/gpt-academic/scripts/catalog_capabilities.py --root . > /tmp/catalog.json
+          python - <<'PY'
+          import json
+          value=json.load(open('/tmp/catalog.json'))
+          assert value['schema_version']=='gpt-academic-capability-catalog/v1'
+          assert value['capabilities']
+          PY
+
+  compile:
+    if: github.event_name == 'workflow_dispatch'
+    needs: source-contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require framework token
+        env:
+          TOKEN: ${{ secrets.PLUGIN_GENERATOR_READ_TOKEN }}
+        run: test -n "$TOKEN"
+      - name: Checkout exact plugin-generator
+        uses: actions/checkout@v4
+        with:
+          repository: wignerStan/plugin-generator
+          ref: 61f8b4d2388b08b0edbbe09d0742ab96706d9fe3
+          path: .framework/plugin-generator
+          token: ${{ secrets.PLUGIN_GENERATOR_READ_TOKEN }}
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Validate, plan, and build
+        run: |
+          cargo run --manifest-path .framework/plugin-generator/Cargo.toml -p plugin-generator -- validate --manifest packages/gpt-academic/plugin.json --inventory packages/gpt-academic/source-inventory.json
+          cargo run --manifest-path .framework/plugin-generator/Cargo.toml -p plugin-generator -- plan --manifest packages/gpt-academic/plugin.json --inventory packages/gpt-academic/source-inventory.json --output /tmp/gpt-academic-build-plan.json
+          cargo run --manifest-path .framework/plugin-generator/Cargo.toml -p plugin-generator -- build --manifest packages/gpt-academic/plugin.json --inventory packages/gpt-academic/source-inventory.json --source-root packages/gpt-academic --target portable --channel testing --output-dir dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gpt-academic-skill-testing
+          path: dist/
+          if-no-files-found: error
