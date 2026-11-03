@@ -1,0 +1,26 @@
+{
+  "schema_version": "plugin-source-inventory/v0",
+  "entries": [
+    {
+      "path": "source/skills/gpt-academic/SKILL.md",
+      "kind": "file",
+      "sha256": "7aff5c1a9d17b3221ac8c921539d1f162a64f1fd9dd7b89d6e4f9d82ac44a935",
+      "size": 1713,
+      "mode": "0644"
+    },
+    {
+      "path": "source/skills/gpt-academic/references/CONTRACT.md",
+      "kind": "file",
+      "sha256": "18f54ea3c30aaec4c8493a47b9689b65f7247eb32d1ff96ff9c64787ec45797c",
+      "size": 2407,
+      "mode": "0644"
+    },
+    {
+      "path": "source/skills/gpt-academic/scripts/catalog_capabilities.py",
+      "kind": "file",
+      "sha256": "3b30025d4f7afde906a4679edf08ec5cc778b1ea67350befb272c65b0d2cb519",
+      "size": 6387,
+      "mode": "0755"
+    }
+  ]
+}

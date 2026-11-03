@@ -1,0 +1,86 @@
+{
+  "schema_version": "plugin-source/v0",
+  "id": "gpt-academic",
+  "version": "0.1.0-alpha.1",
+  "focus": "Provide one compiled Skill for discovering and selecting GPT Academic prompt and plugin capabilities without duplicating the application registry.",
+  "in_scope": [
+    "read-only discovery of declared core prompts and application plugins",
+    "exact capability-name and registry-metadata preservation",
+    "input preparation and execution-boundary guidance"
+  ],
+  "out_of_scope": [
+    "executing GPT Academic prompts or plugins",
+    "model provider credentials and runtime configuration",
+    "one generated Agent Skill per application menu entry",
+    "file network browser or destructive effects"
+  ],
+  "owners": [
+    {
+      "id": "gpt-academic",
+      "purpose": "Own capability discovery and selection guidance for GPT Academic."
+    }
+  ],
+  "permissions": [
+    {
+      "id": "filesystem-read",
+      "purpose": "Read the selected GPT Academic registry source files."
+    },
+    {
+      "id": "process-run",
+      "purpose": "Run the bundled read-only catalog script."
+    }
+  ],
+  "secrets": [],
+  "targets": [
+    {
+      "name": "portable",
+      "required_capabilities": [
+        "reference",
+        "script",
+        "skill"
+      ]
+    }
+  ],
+  "components": [
+    {
+      "id": "gpt-academic-contract",
+      "kind": "reference",
+      "owner": "gpt-academic",
+      "source": "source/skills/gpt-academic/references/CONTRACT.md",
+      "purpose": "Specify registry ownership, catalog schema, naming, and execution boundaries.",
+      "requires": [],
+      "permissions": [],
+      "secrets": []
+    },
+    {
+      "id": "gpt-academic-catalog",
+      "kind": "script",
+      "owner": "gpt-academic",
+      "source": "source/skills/gpt-academic/scripts/catalog_capabilities.py",
+      "entrypoint": "source/skills/gpt-academic/scripts/catalog_capabilities.py",
+      "purpose": "Read literal GPT Academic capability declarations without importing the application.",
+      "requires": [],
+      "permissions": [
+        "filesystem-read",
+        "process-run"
+      ],
+      "secrets": []
+    },
+    {
+      "id": "gpt-academic-skill",
+      "kind": "skill",
+      "owner": "gpt-academic",
+      "source": "source/skills/gpt-academic/SKILL.md",
+      "purpose": "Guide agents to discover, select, and prepare GPT Academic capabilities.",
+      "requires": [
+        "gpt-academic-contract",
+        "gpt-academic-catalog"
+      ],
+      "permissions": [
+        "filesystem-read",
+        "process-run"
+      ],
+      "secrets": []
+    }
+  ]
+}
